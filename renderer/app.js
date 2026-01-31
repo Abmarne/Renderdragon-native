@@ -1,0 +1,547 @@
+// ===== Constants =====
+const API_BASE = 'https://hamburger-api.powernplant101-c6b.workers.dev';
+const ITEMS_PER_PAGE = 30;
+
+// Category shortcuts mapping
+const CATEGORY_SHORTCUTS = {
+    'a': 'animations',
+    'f': 'fonts',
+    'i': 'images',
+    'm': 'music',      // M for music (primary)
+    'c': 'mcicons',    // C for minecraft icons
+    'p': 'presets',
+    's': 'sfx'
+};
+
+// ===== State =====
+let allAssets = [];
+let filteredAssets = [];
+let displayedCount = 0;
+let currentCategory = 'all';
+let isLoading = false;
+let searchTimeout = null;
+
+// ===== DOM Elements =====
+const searchInput = document.getElementById('searchInput');
+const closeBtn = document.getElementById('closeBtn');
+const assetsGrid = document.getElementById('assetsGrid');
+const assetsContainer = document.getElementById('assetsContainer');
+const loadingIndicator = document.getElementById('loadingIndicator');
+const resultsCount = document.getElementById('resultsCount');
+const filterBtns = document.querySelectorAll('.filter-btn');
+const previewModal = document.getElementById('previewModal');
+const previewContent = document.getElementById('previewContent');
+const previewClose = document.getElementById('previewClose');
+
+// ===== Initialize =====
+document.addEventListener('DOMContentLoaded', () => {
+    fetchAllAssets();
+    setupEventListeners();
+});
+
+// ===== API Functions =====
+async function fetchAllAssets() {
+    try {
+        resultsCount.textContent = 'Loading assets...';
+        const response = await fetch(`${API_BASE}/all`);
+        const data = await response.json();
+
+        // Flatten all categories into single array, excluding 'resources'
+        allAssets = [];
+        for (const [category, files] of Object.entries(data.categories)) {
+            if (category === 'resources') continue; // Skip resources category
+            files.forEach(file => {
+                allAssets.push({
+                    ...file,
+                    category: category
+                });
+            });
+        }
+
+        // Sort by title
+        allAssets.sort((a, b) => a.title.localeCompare(b.title));
+
+        filterAssets();
+    } catch (error) {
+        console.error('Failed to fetch assets:', error);
+        resultsCount.textContent = 'Failed to load assets. Check your connection.';
+    }
+}
+
+// ===== Filtering =====
+function filterAssets() {
+    const rawQuery = searchInput.value.trim();
+    let category = currentCategory;
+    let searchQuery = rawQuery;
+
+    // Parse category shortcut from query (e.g., !M for music)
+    const shortcutMatch = rawQuery.match(/^!([a-z])\s*/i);
+    if (shortcutMatch) {
+        const shortcut = shortcutMatch[1].toLowerCase();
+        if (CATEGORY_SHORTCUTS[shortcut]) {
+            category = CATEGORY_SHORTCUTS[shortcut];
+            searchQuery = rawQuery.slice(shortcutMatch[0].length);
+
+            // Update filter buttons to reflect shortcut selection
+            filterBtns.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.category === category);
+            });
+        }
+    }
+
+    const query = searchQuery.toLowerCase();
+
+    filteredAssets = allAssets.filter(asset => {
+        // Category filter
+        if (category !== 'all' && asset.category !== category) {
+            return false;
+        }
+
+        // Search query filter
+        if (query) {
+            return asset.title.toLowerCase().includes(query) ||
+                asset.filename.toLowerCase().includes(query);
+        }
+
+        return true;
+    });
+
+    // Reset and render
+    displayedCount = 0;
+    assetsGrid.innerHTML = '';
+    loadMoreAssets();
+
+    // Update results count
+    updateResultsCount();
+}
+
+function updateResultsCount() {
+    const categoryText = currentCategory === 'all' ? 'all categories' : currentCategory;
+    resultsCount.textContent = `${filteredAssets.length} assets in ${categoryText}`;
+}
+
+// ===== Lazy Loading =====
+function loadMoreAssets() {
+    if (isLoading || displayedCount >= filteredAssets.length) {
+        loadingIndicator.classList.remove('visible');
+        return;
+    }
+
+    isLoading = true;
+    loadingIndicator.classList.add('visible');
+
+    const endIndex = Math.min(displayedCount + ITEMS_PER_PAGE, filteredAssets.length);
+    const fragment = document.createDocumentFragment();
+
+    for (let i = displayedCount; i < endIndex; i++) {
+        const asset = filteredAssets[i];
+        const tile = createAssetTile(asset);
+        fragment.appendChild(tile);
+    }
+
+    assetsGrid.appendChild(fragment);
+    displayedCount = endIndex;
+    isLoading = false;
+
+    if (displayedCount >= filteredAssets.length) {
+        loadingIndicator.classList.remove('visible');
+    }
+
+    // Show empty state if no results
+    if (filteredAssets.length === 0) {
+        assetsGrid.innerHTML = `
+      <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.3-4.3"></path>
+          <path d="M8 8h6"></path>
+        </svg>
+        <p>No assets found</p>
+      </div>
+    `;
+    }
+}
+
+// ===== Asset Tile Creation =====
+function createAssetTile(asset) {
+    const tile = document.createElement('div');
+    tile.className = 'asset-tile';
+    tile.dataset.id = asset.id;
+
+    const previewHtml = getPreviewHtml(asset);
+    const sizeText = formatSize(asset.size);
+
+    tile.innerHTML = `
+    <div class="asset-preview">
+      ${previewHtml}
+    </div>
+    <div class="asset-info">
+      <div class="asset-title" title="${escapeHtml(asset.title)}">${escapeHtml(asset.title)}</div>
+      <div class="asset-meta">
+        <span class="asset-category ${asset.category}">${asset.category}</span>
+        <span class="asset-size">${sizeText}</span>
+      </div>
+    </div>
+    <div class="asset-actions">
+      <button class="action-btn preview-btn" title="Preview">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+        Preview
+      </button>
+      <button class="action-btn download-btn" title="Download">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" x2="12" y1="15" y2="3"></line>
+        </svg>
+        Download
+      </button>
+    </div>
+  `;
+
+    // Event listeners
+    const previewBtn = tile.querySelector('.preview-btn');
+    const downloadBtn = tile.querySelector('.download-btn');
+
+    previewBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showPreview(asset);
+    });
+
+    downloadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadAsset(asset);
+    });
+
+    tile.addEventListener('click', () => showPreview(asset));
+
+    return tile;
+}
+
+function getPreviewHtml(asset) {
+    const ext = asset.ext.toLowerCase();
+    const uniqueId = `asset-${asset.id}`;
+
+    // Images
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+        return `<img src="${asset.url}" alt="${escapeHtml(asset.title)}" loading="lazy">`;
+    }
+
+    // Videos - inline video preview with muted autoplay on hover
+    if (['mp4', 'webm', 'mov'].includes(ext)) {
+        return `
+      <video 
+        class="video-preview" 
+        src="${asset.url}" 
+        muted 
+        loop 
+        preload="metadata"
+        onmouseenter="this.play()" 
+        onmouseleave="this.pause(); this.currentTime = 0;"
+      ></video>
+      <div class="play-overlay">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+      </div>
+    `;
+    }
+
+    // Audio - mini player with play button and waveform visualization
+    if (['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext)) {
+        return `
+      <div class="audio-preview" data-src="${asset.url}" data-id="${uniqueId}">
+        <button class="audio-play-btn" onclick="event.stopPropagation(); toggleAudioPreview('${uniqueId}', '${asset.url}')">
+          <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <svg class="pause-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="display:none;">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+        </button>
+        <div class="audio-waveform">
+          <div class="waveform-bar"></div>
+          <div class="waveform-bar"></div>
+          <div class="waveform-bar"></div>
+          <div class="waveform-bar"></div>
+          <div class="waveform-bar"></div>
+          <div class="waveform-bar"></div>
+          <div class="waveform-bar"></div>
+          <div class="waveform-bar"></div>
+        </div>
+      </div>
+      <audio id="${uniqueId}" preload="none"></audio>
+    `;
+    }
+
+    // Fonts - load and display with custom font style
+    if (['ttf', 'otf', 'woff', 'woff2'].includes(ext)) {
+        const fontFamily = `font-${asset.id}`;
+        loadFont(fontFamily, asset.url);
+        return `
+      <div class="font-preview" data-font="${fontFamily}" style="font-family: '${fontFamily}', sans-serif;">
+        Aa
+      </div>
+    `;
+    }
+
+    // Default
+    return `
+    <svg class="preview-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path>
+      <path d="M14 2v4a2 2 0 0 0 2 2h4"></path>
+    </svg>
+  `;
+}
+
+// ===== Font Loading =====
+const loadedFonts = new Map(); // Map of fontFamily -> Promise
+
+function loadFont(fontFamily, url) {
+    if (loadedFonts.has(fontFamily)) {
+        return loadedFonts.get(fontFamily);
+    }
+
+    const fontFace = new FontFace(fontFamily, `url(${url})`);
+    const loadPromise = fontFace.load().then(loadedFont => {
+        document.fonts.add(loadedFont);
+        // Force re-render of all elements using this font
+        document.querySelectorAll(`[data-font="${fontFamily}"]`).forEach(el => {
+            el.style.fontFamily = `'${fontFamily}', sans-serif`;
+            el.classList.add('font-loaded');
+        });
+        return loadedFont;
+    }).catch(err => {
+        console.warn(`Failed to load font: ${fontFamily}`, err);
+    });
+
+    loadedFonts.set(fontFamily, loadPromise);
+    return loadPromise;
+}
+
+// ===== Audio Preview =====
+let currentPlayingAudio = null;
+let currentPlayingId = null;
+
+function toggleAudioPreview(id, url) {
+    const audioEl = document.getElementById(id);
+    const previewEl = document.querySelector(`[data-id="${id}"]`);
+
+    if (!audioEl || !previewEl) return;
+
+    // Stop any other playing audio
+    if (currentPlayingAudio && currentPlayingId !== id) {
+        stopAudioPreview(currentPlayingId);
+    }
+
+    if (audioEl.paused) {
+        // Load and play
+        if (!audioEl.src) {
+            audioEl.src = url;
+        }
+        audioEl.play();
+        previewEl.classList.add('playing');
+        previewEl.querySelector('.play-icon').style.display = 'none';
+        previewEl.querySelector('.pause-icon').style.display = 'block';
+        currentPlayingAudio = audioEl;
+        currentPlayingId = id;
+
+        // Stop when audio ends
+        audioEl.onended = () => stopAudioPreview(id);
+    } else {
+        stopAudioPreview(id);
+    }
+}
+
+function stopAudioPreview(id) {
+    const audioEl = document.getElementById(id);
+    const previewEl = document.querySelector(`[data-id="${id}"]`);
+
+    if (audioEl) {
+        audioEl.pause();
+        audioEl.currentTime = 0;
+    }
+
+    if (previewEl) {
+        previewEl.classList.remove('playing');
+        previewEl.querySelector('.play-icon').style.display = 'block';
+        previewEl.querySelector('.pause-icon').style.display = 'none';
+    }
+
+    if (currentPlayingId === id) {
+        currentPlayingAudio = null;
+        currentPlayingId = null;
+    }
+}
+
+// ===== Preview Modal =====
+function showPreview(asset) {
+    const ext = asset.ext.toLowerCase();
+    let content = '';
+
+    // Images
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+        content = `<img src="${asset.url}" alt="${escapeHtml(asset.title)}">`;
+    }
+    // Videos
+    else if (['mp4', 'webm', 'mov'].includes(ext)) {
+        content = `<video src="${asset.url}" controls autoplay></video>`;
+    }
+    // Audio
+    else if (['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext)) {
+        content = `
+      <div style="text-align: center; color: #fff;">
+        <p style="margin-bottom: 20px; font-size: 18px;">${escapeHtml(asset.title)}</p>
+        <audio src="${asset.url}" controls autoplay style="width: 100%;"></audio>
+      </div>
+    `;
+    }
+    // Fonts - show full preview with sample text
+    else if (['ttf', 'otf', 'woff', 'woff2'].includes(ext)) {
+        const fontFamily = `font-${asset.id}`;
+        loadFont(fontFamily, asset.url);
+        content = `
+      <div style="text-align: center; color: #fff; padding: 40px; max-width: 600px;">
+        <p style="margin-bottom: 30px; font-size: 16px; color: #888;">${escapeHtml(asset.title)}</p>
+        <div style="font-family: '${fontFamily}', sans-serif; font-size: 72px; margin-bottom: 20px; line-height: 1.2;">Aa</div>
+        <div style="font-family: '${fontFamily}', sans-serif; font-size: 36px; margin-bottom: 20px; line-height: 1.3;">The quick brown fox jumps over the lazy dog</div>
+        <div style="font-family: '${fontFamily}', sans-serif; font-size: 24px; margin-bottom: 20px; line-height: 1.4;">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
+        <div style="font-family: '${fontFamily}', sans-serif; font-size: 24px; margin-bottom: 20px; line-height: 1.4;">abcdefghijklmnopqrstuvwxyz</div>
+        <div style="font-family: '${fontFamily}', sans-serif; font-size: 24px; line-height: 1.4;">0123456789 !@#$%^&*()</div>
+      </div>
+    `;
+    }
+    // Other files - just show info
+    else {
+        content = `
+      <div style="text-align: center; color: #fff; padding: 40px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 20px; opacity: 0.5;">
+          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path>
+          <path d="M14 2v4a2 2 0 0 0 2 2h4"></path>
+        </svg>
+        <p style="font-size: 18px; margin-bottom: 8px;">${escapeHtml(asset.title)}</p>
+        <p style="color: #888; font-size: 14px;">Preview not available for this file type</p>
+        <button onclick="downloadAsset(${JSON.stringify(asset).replace(/"/g, '&quot;')})" 
+                style="margin-top: 20px; padding: 10px 24px; background: #22c55e; border: none; border-radius: 8px; color: #fff; cursor: pointer; font-size: 14px;">
+          Download File
+        </button>
+      </div>
+    `;
+    }
+
+    previewContent.innerHTML = content;
+    previewModal.classList.add('active');
+}
+
+function hidePreview() {
+    previewModal.classList.remove('active');
+    // Stop any playing media
+    const media = previewContent.querySelector('video, audio');
+    if (media) {
+        media.pause();
+        media.src = '';
+    }
+    previewContent.innerHTML = '';
+}
+
+// ===== Download =====
+async function downloadAsset(asset) {
+    try {
+        const result = await window.api.downloadAsset(asset.url, asset.filename);
+        if (result.success) {
+            console.log('Downloaded to:', result.path);
+        } else {
+            console.error('Download failed:', result.message);
+        }
+    } catch (error) {
+        console.error('Download error:', error);
+    }
+}
+
+// ===== Event Listeners =====
+function setupEventListeners() {
+    // Search input with debounce
+    searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            filterAssets();
+        }, 200);
+    });
+
+    // Close button
+    closeBtn.addEventListener('click', () => {
+        window.api.hideWindow();
+    });
+
+    // Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (previewModal.classList.contains('active')) {
+                hidePreview();
+            } else {
+                window.api.hideWindow();
+            }
+        }
+    });
+
+    // Category filter buttons
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            filterBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentCategory = btn.dataset.category;
+
+            // Clear category shortcut from search if present
+            const rawQuery = searchInput.value.trim();
+            const shortcutMatch = rawQuery.match(/^!([a-z])\s*/i);
+            if (shortcutMatch) {
+                searchInput.value = rawQuery.slice(shortcutMatch[0].length);
+            }
+
+            filterAssets();
+        });
+    });
+
+    // Infinite scroll
+    assetsContainer.addEventListener('scroll', () => {
+        const { scrollTop, scrollHeight, clientHeight } = assetsContainer;
+        if (scrollTop + clientHeight >= scrollHeight - 100) {
+            loadMoreAssets();
+        }
+    });
+
+    // Preview modal close
+    previewClose.addEventListener('click', hidePreview);
+    previewModal.addEventListener('click', (e) => {
+        if (e.target === previewModal) {
+            hidePreview();
+        }
+    });
+
+    // Window shown - focus search
+    window.api.onWindowShown(() => {
+        searchInput.focus();
+        searchInput.select();
+    });
+
+    // Window hidden - clear search
+    window.api.onWindowHidden(() => {
+        hidePreview();
+    });
+}
+
+// ===== Utilities =====
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
