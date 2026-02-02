@@ -636,3 +636,37 @@ body {
 .font-preview.font-loaded {
     opacity: 1;
 }
+
+/* ===== Go to Top Button ===== */
+.go-top-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(20px);
+    transition: opacity var(--transition-normal), visibility var(--transition-normal), transform var(--transition-normal), background var(--transition-fast);
+    z-index: 100;
+}
+
+.go-top-btn:hover {
+    background: var(--accent-secondary);
+    transform: translateY(0) scale(1.1);
+}
+
+.go-top-btn.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}

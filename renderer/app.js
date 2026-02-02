@@ -33,6 +33,7 @@ const filterBtns = document.querySelectorAll('.filter-btn');
 const previewModal = document.getElementById('previewModal');
 const previewContent = document.getElementById('previewContent');
 const previewClose = document.getElementById('previewClose');
+const goTopBtn = document.getElementById('goTopBtn');
 
 // ===== Initialize =====
 document.addEventListener('DOMContentLoaded', () => {
@@ -624,12 +625,27 @@ function setupEventListeners() {
         });
     });
 
-    // Infinite scroll
+    // Infinite scroll and go-to-top button visibility
     assetsContainer.addEventListener('scroll', () => {
         const { scrollTop, scrollHeight, clientHeight } = assetsContainer;
         if (scrollTop + clientHeight >= scrollHeight - 100) {
             loadMoreAssets();
         }
+
+        // Show/hide go-to-top button based on scroll position
+        if (scrollTop > 200) {
+            goTopBtn.classList.add('visible');
+        } else {
+            goTopBtn.classList.remove('visible');
+        }
+    });
+
+    // Go to top button click
+    goTopBtn.addEventListener('click', () => {
+        assetsContainer.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
     });
 
     // Preview modal close
