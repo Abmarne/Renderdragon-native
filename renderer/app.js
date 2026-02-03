@@ -582,6 +582,8 @@ function setupEventListeners() {
         if (e.key === 'Escape') {
             if (previewModal.classList.contains('active')) {
                 hidePreview();
+            } else if (settingsModal.classList.contains('active')) {
+                closeSettings();
             } else {
                 window.api.hideWindow();
             }
@@ -858,6 +860,9 @@ function handleSaveSettings() {
         settings.showCopyBtn !== newSettings.showCopyBtn ||
         settings.showDownloadBtn !== newSettings.showDownloadBtn;
 
+    // Check if default category changed
+    const categoryChanged = settings.defaultCategory !== newSettings.defaultCategory;
+
     // Update settings
     settings = newSettings;
     saveSettings();
@@ -865,8 +870,15 @@ function handleSaveSettings() {
     // Apply grid columns immediately
     applyGridColumns();
 
-    // Re-render tiles if button visibility changed
-    if (buttonsChanged) {
+    // Apply new category if changed
+    if (categoryChanged) {
+        currentCategory = settings.defaultCategory;
+        filterBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.category === currentCategory);
+        });
+        filterAssets();
+    } else if (buttonsChanged) {
+        // Re-render tiles if only button visibility changed
         filterAssets();
     }
 
