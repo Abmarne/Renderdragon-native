@@ -13,7 +13,10 @@
         "assets",
         "renderdragon"
     ],
-    "author": "",
+    "author": {
+        "name": "Renderdragon",
+        "email": "contact@renderdragon.org"
+    },
     "license": "MIT",
     "devDependencies": {
         "electron": "^28.0.0",
