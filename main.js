@@ -276,14 +276,14 @@ function copyFileToClipboard(filePath) {
     } else if (process.platform === "darwin") {
       const { execFile } = require("child_process");
       // Use AppleScript to set clipboard to POSIX file.
-      // Escape internal quotes for AppleScript string interpolation
-      const script = `tell application "Finder" to set the clipboard to (POSIX file "${filePath.replace(/"/g, '\\"')}") as alias`;
+      // Escape internal quotes and backslashes for AppleScript string interpolation
+      const script = `tell application "Finder" to set the clipboard to (POSIX file "${filePath.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}") as alias`;
 
       execFile("osascript", ["-e", script], { timeout: 10000 }, (error) => {
         if (error) {
           console.error("AppleScript error:", error);
           // Fallback to a simpler version if Finder interaction fails
-          const fallbackScript = `set the clipboard to (POSIX file "${filePath.replace(/"/g, '\\"')}")`;
+          const fallbackScript = `set the clipboard to (POSIX file "${filePath.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}")`;
           execFile("osascript", ["-e", fallbackScript], (fallbackError) => {
             if (fallbackError) {
               resolve({ success: false, message: fallbackError.message });
