@@ -62,6 +62,14 @@ function createWindow() {
         hideWindow();
     });
 
+    // Prevent window from being destroyed on close - hide to tray instead
+    mainWindow.on('close', (event) => {
+        if (!app.isQuitting) {
+            event.preventDefault();
+            hideWindow();
+        }
+    });
+
     // Center window on screen
     mainWindow.center();
 }
@@ -73,6 +81,7 @@ function showWindow() {
         mainWindow.focus();
         mainWindow.webContents.send('window-shown');
         isVisible = true;
+        updateTrayMenu();
     }
 }
 
@@ -81,6 +90,7 @@ function hideWindow() {
         mainWindow.hide();
         mainWindow.webContents.send('window-hidden');
         isVisible = false;
+        updateTrayMenu();
     }
 }
 
@@ -93,8 +103,8 @@ function toggleWindow() {
 }
 
 function createTray() {
-    // Use the existing icon
-    const iconPath = path.join(__dirname, 'icon', 'icon.png');
+    // Use the existing icon - use app.getAppPath() for packaged apps
+    const iconPath = path.join(app.getAppPath(), 'icon', 'icon.png');
 
     // Create tray icon - resize for system tray (16x16 on most platforms)
     let trayIcon = nativeImage.createFromPath(iconPath);
@@ -116,7 +126,6 @@ function createTray() {
             label: isVisible ? 'Hide' : 'Show',
             click: () => {
                 toggleWindow();
-                updateTrayMenu();
             }
         },
         { type: 'separator' },
@@ -133,7 +142,6 @@ function createTray() {
     // Single click on tray icon toggles window (Windows/Linux)
     tray.on('click', () => {
         toggleWindow();
-        updateTrayMenu();
     });
 }
 
@@ -145,7 +153,6 @@ function updateTrayMenu() {
             label: isVisible ? 'Hide' : 'Show',
             click: () => {
                 toggleWindow();
-                updateTrayMenu();
             }
         },
         { type: 'separator' },
@@ -340,6 +347,10 @@ app.whenReady().then(() => {
             createWindow();
         }
     });
+});
+
+app.on('before-quit', () => {
+    app.isQuitting = true;
 });
 
 app.on('will-quit', () => {
